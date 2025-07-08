@@ -1,42 +1,36 @@
 from fastapi import FastAPI
 from pyrogram import Client, filters
 from pyrogram.types import Message
+from contextlib import asynccontextmanager
 import asyncio
 
-# --- Bot Config ---
 API_ID = 20366208
 API_HASH = "2c9d5b3859f56347838f388c59377bd9"
 BOT_TOKEN = "7186450162:AAHfqp6rQlnNgpOon5qTCTA4CoRVd_ZBTV8"
-VIDEO_CHANNEL = -1002544364347  # your private channel storing videos
+VIDEO_CHANNEL = -1002544364347
 
-# --- FastAPI App ---
-app = FastAPI()
+bot = Client("raredesistuffbot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# --- Pyrogram Bot Client ---
-bot = Client(
-    "raredesistuffbot",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    bot_token=BOT_TOKEN
-)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Start Pyrogram bot
+    await bot.start()
+    print("✅ Bot started")
+    yield
+    await bot.stop()
+    print("🛑 Bot stopped")
 
-# --- Start Bot on App Startup ---
-@app.on_event("startup")
-async def startup_event():
-    asyncio.create_task(bot.start())
-    print("✅ Bot is running!")
+app = FastAPI(lifespan=lifespan)
 
-# --- HTTP Root Ping Route ---
 @app.get("/")
-async def root():
-    return {"status": "Bot is online"}
+def root():
+    return {"status": "Bot is running"}
 
-# --- /start Handler with Deep Link ---
 @bot.on_message(filters.private & filters.command("start"))
 async def handle_start(client: Client, message: Message):
     args = message.command
     if len(args) > 1:
-        param = args[1]  # e.g., "vid15"
+        param = args[1]
         if param.startswith("vid") and param[3:].isdigit():
             msg_id = int(param[3:])
             try:
@@ -50,4 +44,4 @@ async def handle_start(client: Client, message: Message):
         else:
             await message.reply("❗ Invalid video key.")
     else:
-        await message.reply("👋 Send /start vid<id> to get a video.")
+        await message.reply("👋 Send /start to get a video.")
