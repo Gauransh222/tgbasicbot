@@ -1,47 +1,59 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from pyrogram import Client, filters
-from pyrogram.types import Message
-from contextlib import asynccontextmanager
-import asyncio
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+import os
 
 API_ID = 20366208
 API_HASH = "2c9d5b3859f56347838f388c59377bd9"
 BOT_TOKEN = "7186450162:AAHfqp6rQlnNgpOon5qTCTA4CoRVd_ZBTV8"
-VIDEO_CHANNEL = -1002544364347
 
-bot = Client("raredesistuffbot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+CHANNEL_1 = -1002544364347  # Your video storage private channel
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Start Pyrogram bot
-    await bot.start()
-    print("✅ Bot started")
-    yield
-    await bot.stop()
-    print("🛑 Bot stopped")
+# Store video file_id mapped by key like "vid15"
+video_store = {}
 
-app = FastAPI(lifespan=lifespan)
+# Pyrogram client (bot)
+bot = Client("tgbasicbot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-@app.get("/")
-def root():
+# FastAPI app for Render & uptime
+app = FastAPI()
+
+# ✅ Support both GET and HEAD requests for uptime check
+@app.api_route("/", methods=["GET", "HEAD"])
+def root(request: Request):
+    if request.method == "HEAD":
+        return JSONResponse(content=None, status_code=200)
     return {"status": "Bot is running"}
 
-@bot.on_message(filters.private & filters.command("start"))
-async def handle_start(client: Client, message: Message):
-    args = message.command
-    if len(args) > 1:
-        param = args[1]
-        if param.startswith("vid") and param[3:].isdigit():
-            msg_id = int(param[3:])
-            try:
-                await client.copy_message(
-                    chat_id=message.chat.id,
-                    from_chat_id=VIDEO_CHANNEL,
-                    message_id=msg_id
-                )
-            except Exception as e:
-                await message.reply(f"❌ Could not fetch video: {e}")
+# 📦 Store file_id when bot receives a video
+@bot.on_message(filters.chat(CHANNEL_1) & filters.video)
+async def handle_video(client, message: Message):
+    key = f"vid{message.id}"
+    video_store[key] = message.video.file_id
+    print(f"Saved: {key} → {message.video.file_id}")
+
+# 🚀 Respond to deep links like /start vid15
+@bot.on_message(filters.command("start"))
+async def start_handler(client, message: Message):
+    parts = message.text.split(" ")
+    if len(parts) == 2 and parts[1].startswith("vid"):
+        key = parts[1]
+        file_id = video_store.get(key)
+        if file_id:
+            await message.reply_video(file_id, caption="🎬 Here's your video")
         else:
-            await message.reply("❗ Invalid video key.")
+            await message.reply("❌ Video not found. It may have expired or the bot was restarted.")
     else:
-        await message.reply("👋 Send /start to get a video.")
+        await message.reply("👋 Welcome! Use a valid video link.")
+
+# 🔄 Launch bot and API together
+@app.on_event("startup")
+async def startup():
+    await bot.start()
+    print("✅ Bot started")
+
+@app.on_event("shutdown")
+async def shutdown():
+    await bot.stop()
+    print("❌ Bot stopped")
